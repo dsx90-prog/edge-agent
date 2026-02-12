@@ -1,0 +1,95 @@
+# Socket Proxy Client Configuration
+api_proxy:
+  base_url: "http://localhost:8089"  # Base URL for api_call commands
+  timeout: "30s"
+  
+  # Optional custom headers (applied to all requests)
+  headers:
+    "User-Agent": "SocketProxyService/1.0"
+    "X-Custom-Header": "value"
+  
+  # Optional authentication (applied to all requests unless overridden)
+  auth:
+    token: "your-api-token-here"
+    type: "Bearer"  # Bearer, Basic, etc.
+
+# WebSocket client configuration (for connecting to external WebSocket servers)
+websocket:
+  enabled: true  # Enable WebSocket client
+  url: "ws://192.168.1.37:8081"  # WebSocket server URL - CHANGE THIS TO YOUR SERVER
+  client_id: "00000"  # Client identifier
+  reconnect:
+    enabled: true  # Enable auto-reconnect
+    max_attempts: 5  # Maximum reconnection attempts
+    initial_delay: "5s"  # Initial delay before reconnection
+    max_delay: "60s"  # Maximum delay between reconnections
+    backoff_multiplier: 2  # Exponential backoff multiplier
+
+# Quick commands - predefined commands for common operations
+quick_commands:
+  # Local system management commands
+  restart_service:
+    type: "ssh_command"
+    payload:
+      command: "systemctl restart nginx"
+      timeout: "30s"
+  
+  reboot_system:
+    type: "ssh_command"
+    payload:
+      command: "reboot"
+      timeout: "10s"
+  
+  check_disk_space:
+    type: "ssh_command"
+    payload:
+      command: "df -h"
+      timeout: "15s"
+  
+  list_processes:
+    type: "ssh_command"
+    payload:
+      command: "ps aux"
+      timeout: "10s"
+  
+  get_system_info:
+    type: "ssh_command"
+    payload:
+      command: "uname -a && uptime"
+      timeout: "5s"
+  
+  # Application management commands
+  open_cell_1:
+    type: "api_call"
+    payload:
+      url: "/api/cell/open"
+      method: "POST"
+      body:
+        cell_number: 1
+        reason: "quick_command"
+  
+  get_status:
+    type: "api_call"
+    payload:
+      url: "/api/status"
+      method: "GET"
+  
+  # External service commands
+  ping_external:
+    type: "http_request"
+    payload:
+      url: "https://httpbin.org/get"
+      method: "GET"
+      headers:
+        "User-Agent": "SocketProxyService/1.0"
+
+# Enable/disable specific command types
+enabled_commands:
+  api_call: true      # Enable/disable API calls
+  http_request: true  # Enable/disable HTTP requests
+  ssh_command: true   # Enable/disable SSH commands (now local execution)
+
+logging:
+  level: "info"  # debug, info, warn, error
+  format: "text"  # text, json
+  file: "socket-proxy.log"  # Optional: log to file
