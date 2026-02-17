@@ -2,13 +2,13 @@ package client
 
 import (
 	"context"
+	"edge-agent/internal/config"
+	"edge-agent/internal/local"
+	"edge-agent/internal/proxy"
+	"edge-agent/internal/tcp"
+	"edge-agent/internal/websocket"
 	"fmt"
 	"log"
-	"socket-proxy-service/internal/config"
-	"socket-proxy-service/internal/local"
-	"socket-proxy-service/internal/proxy"
-	"socket-proxy-service/internal/tcp"
-	"socket-proxy-service/internal/websocket"
 	"sync"
 	"time"
 )

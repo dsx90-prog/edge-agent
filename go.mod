@@ -1,4 +1,4 @@
-module socket-proxy-service
+module edge-agent
 
 go 1.24.0
 

@@ -3,13 +3,12 @@ package proxy
 import (
 	"bytes"
 	"context"
+	"edge-agent/internal/config"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
-
-	"socket-proxy-service/internal/config"
 )
 
 type APIClient struct {

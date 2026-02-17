@@ -2,14 +2,14 @@ package main
 
 import (
 	"context"
+	"edge-agent/internal/client"
+	"edge-agent/internal/config"
 	"flag"
 	"fmt"
 	"io"
 	"log"
 	"os"
 	"os/signal"
-	"socket-proxy-service/internal/client"
-	"socket-proxy-service/internal/config"
 	"syscall"
 	"time"
 )
