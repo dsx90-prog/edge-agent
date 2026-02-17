@@ -114,7 +114,14 @@ func (c *APIClient) executeHTTPRequest(ctx context.Context, url string, method s
 	// Parse response
 	var apiResp APIResponse
 	if err := json.Unmarshal(responseBody, &apiResp); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+		var apiRespI interface{}
+
+		if err := json.Unmarshal(responseBody, &apiRespI); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+		}
+		apiResp.Success = resp.StatusCode == 200
+		apiResp.Data = apiRespI
+		apiResp.Error = string(responseBody)
 	}
 
 	log.Printf("API response: %+v", &apiResp)
