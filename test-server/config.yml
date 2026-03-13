@@ -1,0 +1,60 @@
+server:
+  agent_port: ":8081"
+  ssh_port:   ":2222"
+  web_port:   ":8080"
+
+commands:
+  # Examples of predefined commands
+  open_cell:
+    type: "api_call"
+    payload:
+      url: "/cell/open?num=1"
+      method: "POST"
+      headers:
+        Content-Type: "application/json"
+  
+  list_cells:
+    type: "api_call"
+    payload:
+      url: "/cell?nums=1,2,3"
+      method: "GET"
+      headers:
+        Content-Type: "application/json"
+  
+  sys_info:
+    type: "local_command"
+    payload:
+      command: "uname -a && uptime"
+      timeout: "5s"
+
+templates:
+  # Standard templates for "Insert Template" in UI
+  api_call:
+    type: "api_call"
+    payload:
+      url: "/api/v1/resource"
+      method: "POST"
+      headers: { "Content-Type": "application/json" }
+      body: { "id": 123 }
+
+  http_request:
+    type: "http_request"
+    payload:
+      url: "https://example.com/api"
+      method: "GET"
+
+  local_command:
+    type: "local_command"
+    payload:
+      command: "ls -la"
+      timeout: "5s"
+
+  quick_command:
+    type: "quick_command"
+    payload:
+      name: "status"
+
+  custom:
+    type: "custom"
+    payload:
+      key: "value"

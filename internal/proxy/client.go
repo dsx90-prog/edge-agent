@@ -20,9 +20,9 @@ type APIClient struct {
 }
 
 type APIResponse struct {
-	Success bool        `json:"success"`
 	Data    interface{} `json:"data,omitempty"`
 	Error   string      `json:"error,omitempty"`
+	Success bool        `json:"success"`
 }
 
 func NewAPIClient(cfg *config.Config) *APIClient {
@@ -38,7 +38,7 @@ func NewAPIClient(cfg *config.Config) *APIClient {
 }
 
 func (c *APIClient) ExecuteAPICall(ctx context.Context, url string, method string, headers map[string]string, body interface{}) (*APIResponse, error) {
-	fullURL := c.baseURL + url
+	fullURL := fmt.Sprintf("%s%s", c.baseURL, url)
 	return c.executeHTTPRequest(ctx, fullURL, method, headers, body)
 }
 
@@ -105,17 +105,22 @@ func (c *APIClient) executeHTTPRequest(ctx context.Context, url string, method s
 		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
+	var apiResp APIResponse
+
 	// Check HTTP status
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(responseBody))
+		return &apiResp, nil
 	}
 
 	// Parse response
-	var apiResp APIResponse
+
 	if err := json.Unmarshal(responseBody, &apiResp); err != nil {
 		var apiRespI interface{}
 
 		if err := json.Unmarshal(responseBody, &apiRespI); err != nil {
+			// Log the actual response for debugging
+			log.Printf("Raw response (status %d): %s", resp.StatusCode, string(responseBody))
 			return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 		}
 		apiResp.Success = resp.StatusCode == 200

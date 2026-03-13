@@ -18,10 +18,10 @@ type LocalCommand struct {
 }
 
 type LocalResult struct {
-	ExitCode int    `json:"exit_code"`
 	Stdout   string `json:"stdout"`
 	Stderr   string `json:"stderr"`
 	Duration string `json:"duration"`
+	ExitCode int    `json:"exit_code"`
 }
 
 func NewLocalClient() *LocalClient {

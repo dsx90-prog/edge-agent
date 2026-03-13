@@ -16,9 +16,9 @@ api_proxy:
 # WebSocket client configuration (for connecting to external WebSocket servers)
 websocket:
   enabled: true  # Enable WebSocket client
-  url: "ws://localhost:8081"  # WebSocket server URL - CHANGE THIS TO YOUR SERVER
+  url: "ws://localhost:8081/commands"  # WebSocket server URL
   client_id: "000000"  # Client identifier
-  protocol: "tcp"  # Protocol: "websocket" or "tcp"
+  protocol: "websocket"  # Protocol: "websocket" or "tcp"
   reconnect:
     enabled: true  # Enable auto-reconnect
     max_attempts: 5  # Maximum reconnection attempts
@@ -30,31 +30,31 @@ websocket:
 quick_commands:
   # Local system management commands
   restart_service:
-    type: "ssh_command"
+    type: "local_command"
     payload:
       command: "systemctl restart nginx"
       timeout: "30s"
   
   reboot_system:
-    type: "ssh_command"
+    type: "local_command"
     payload:
       command: "reboot"
       timeout: "10s"
   
   check_disk_space:
-    type: "ssh_command"
+    type: "local_command"
     payload:
       command: "df -h"
       timeout: "15s"
   
   list_processes:
-    type: "ssh_command"
+    type: "local_command"
     payload:
       command: "ps aux"
       timeout: "10s"
   
   get_system_info:
-    type: "ssh_command"
+    type: "local_command"
     payload:
       command: "uname -a && uptime"
       timeout: "5s"
@@ -88,7 +88,7 @@ quick_commands:
 enabled_commands:
   api_call: true      # Enable/disable API calls
   http_request: true  # Enable/disable HTTP requests
-  ssh_command: true   # Enable/disable SSH commands (now local execution)
+  local_command: true   # Enable/disable SSH commands (now local execution)
 
 logging:
   level: "info"  # debug, info, warn, error

@@ -8,10 +8,22 @@ import (
 	"edge-agent/internal/tcp"
 	"edge-agent/internal/websocket"
 	"fmt"
+	"io"
 	"log"
+	"os"
+	"os/exec"
+	"runtime"
 	"sync"
 	"time"
+
+	"github.com/creack/pty"
 )
+
+type PTYSession struct {
+	ID      string
+	File    *os.File
+	Command *exec.Cmd
+}
 
 type Command struct {
 	Type    string      `json:"type"`
@@ -20,27 +32,30 @@ type Command struct {
 }
 
 type CommandResponse struct {
-	ID      string      `json:"id"`
-	Success bool        `json:"success"`
 	Data    interface{} `json:"data,omitempty"`
+	ID      string      `json:"id"`
 	Error   string      `json:"error,omitempty"`
+	Success bool        `json:"success"`
 }
 
 type Client struct {
-	config     *config.Config
-	apiClient  *proxy.APIClient
-	running    bool
-	runningMux sync.Mutex
-	wsClient   *websocket.WSClient
-	tcpClient  *tcp.TCPClient
-	protocol   string // "websocket" or "tcp"
+	config      *config.Config
+	apiClient   *proxy.APIClient
+	wsClient    *websocket.WSClient
+	tcpClient   *tcp.TCPClient
+	protocol    string // "websocket" or "tcp"
+	runningMux  sync.Mutex
+	running     bool
+	ptySessions map[string]*PTYSession
+	ptyMux      sync.Mutex
 }
 
 func NewClient(cfg *config.Config) *Client {
 	client := &Client{
-		config:    cfg,
-		apiClient: proxy.NewAPIClient(cfg),
-		protocol:  cfg.WebSocket.Protocol,
+		config:      cfg,
+		apiClient:   proxy.NewAPIClient(cfg),
+		protocol:    cfg.WebSocket.Protocol,
+		ptySessions: make(map[string]*PTYSession),
 	}
 
 	// Initialize client if enabled
@@ -74,6 +89,7 @@ func (c *Client) Start(ctx context.Context) error {
 		} else if c.wsClient != nil {
 			c.wsClient.SetCommandHandler(c.handleWebSocketCommand)
 		}
+		log.Printf("Connecting using ClientID: %s", c.config.WebSocket.ClientID)
 		go c.startConnectionClient(ctx)
 	} else {
 		log.Println("Warning: Connection client is disabled, running in standalone mode")
@@ -119,11 +135,14 @@ func (c *Client) handleTCPCommand(message map[string]interface{}) map[string]int
 	ctx := context.Background()
 	response := c.processCommand(ctx, command)
 
+	fmt.Printf("tcp processCommand %+v\n", response)
+
 	// Convert response back to map
 	return map[string]interface{}{
 		"type":    "command_response",
 		"payload": response,
 		"id":      response.ID,
+		"success": response.Success,
 	}
 }
 
@@ -139,11 +158,14 @@ func (c *Client) handleWebSocketCommand(message websocket.WSMessage) websocket.W
 	ctx := context.Background()
 	response := c.processCommand(ctx, command)
 
+	fmt.Printf("ws processCommand %+v\n", response)
+
 	// Convert response back to WebSocket message
 	return websocket.WSMessage{
 		Type:    "command_response",
 		Payload: response,
 		ID:      message.ID,
+		Success: response.Success,
 	}
 }
 
@@ -180,11 +202,12 @@ func (c *Client) startConnectionClient(ctx context.Context) {
 			log.Printf("Attempting to connect to %s server (attempt %d/%d)...",
 				c.protocol, reconnectAttempts+1, maxReconnectAttempts)
 
+			metadata := c.getSystemMetadata()
 			var err error
 			if c.protocol == "tcp" {
-				err = c.tcpClient.Connect(ctx, address, c.config.WebSocket.ClientID)
+				err = c.tcpClient.Connect(ctx, address, c.config.WebSocket.ClientID, metadata)
 			} else {
-				err = c.wsClient.Connect(ctx, c.config.WebSocket.URL, c.config.WebSocket.ClientID)
+				err = c.wsClient.Connect(ctx, c.config.WebSocket.URL, c.config.WebSocket.ClientID, metadata)
 			}
 
 			if err != nil {
@@ -286,9 +309,9 @@ func (c *Client) GetStats() map[string]interface{} {
 		"protocol":  c.protocol,
 		"connected": connected,
 		"enabled_commands": map[string]bool{
-			"api_call":     c.config.EnabledCommands.APICall,
-			"http_request": c.config.EnabledCommands.HTTPRequest,
-			"ssh_command":  c.config.EnabledCommands.SSHCommand,
+			"api_call":      c.config.EnabledCommands.APICall,
+			"http_request":  c.config.EnabledCommands.HTTPRequest,
+			"local_command": c.config.EnabledCommands.LocalCommand,
 		},
 	}
 }
@@ -316,15 +339,28 @@ func (c *Client) processCommand(ctx context.Context, command Command) CommandRes
 			}
 		}
 		return c.handleHTTPRequest(ctx, command)
-	case "ssh_command":
-		if !c.config.EnabledCommands.SSHCommand {
+	case "local_command":
+		if !c.config.EnabledCommands.LocalCommand {
 			return CommandResponse{
 				ID:      command.ID,
 				Success: false,
-				Error:   "ssh_command commands are disabled",
+				Error:   "local_command commands are disabled",
 			}
 		}
-		return c.handleSSHCommand(ctx, command)
+		return c.handleLocalCommand(ctx, command)
+	case "interactive_shell_start":
+		if !c.config.EnabledCommands.LocalCommand {
+			return CommandResponse{
+				ID:      command.ID,
+				Success: false,
+				Error:   "interactive_shell is disabled (depends on local_command)",
+			}
+		}
+		return c.handleInteractiveShellStart(ctx, command)
+	case "shell_input":
+		return c.handleShellInput(ctx, command)
+	case "shell_resize":
+		return c.handleShellResize(ctx, command)
 	case "quick_command":
 		return c.handleQuickCommand(ctx, command)
 	case "custom":
@@ -333,7 +369,7 @@ func (c *Client) processCommand(ctx context.Context, command Command) CommandRes
 		return CommandResponse{
 			ID:      command.ID,
 			Success: false,
-			Error:   fmt.Sprintf("Unknown command type: %s. Supported types: api_call, http_request, ssh_command, quick_command, open_cell, get_cell_status, add_key, delete_key, sync_keys, reboot, status, update, custom", command.Type),
+			Error:   fmt.Sprintf("Unknown command type: %s. Supported types: api_call, http_request, local_command, quick_command, open_cell, get_cell_status, add_key, delete_key, sync_keys, reboot, status, update, custom", command.Type),
 		}
 	}
 }
@@ -373,13 +409,13 @@ func (c *Client) handleAPICall(ctx context.Context, command Command) CommandResp
 	}
 
 	// Make API call
-	result, err := c.apiClient.ExecuteAPICall(ctx, url, method, headers, body)
-	if err != nil {
-		log.Printf("API call failed: %v", err)
+	result, executeErr := c.apiClient.ExecuteAPICall(ctx, url, method, headers, body)
+	if executeErr != nil {
+		log.Printf("API call failed: %v", executeErr)
 		return CommandResponse{
 			ID:      command.ID,
 			Success: false,
-			Error:   fmt.Sprintf("API call failed 1: %v", err),
+			Error:   fmt.Sprintf("API call failed: %v", executeErr),
 		}
 	}
 
@@ -448,14 +484,14 @@ func (c *Client) handleHTTPRequest(ctx context.Context, command Command) Command
 	}
 }
 
-func (c *Client) handleSSHCommand(ctx context.Context, command Command) CommandResponse {
+func (c *Client) handleLocalCommand(ctx context.Context, command Command) CommandResponse {
 	// Extract payload parameters
 	payload, ok := command.Payload.(map[string]interface{})
 	if !ok {
 		return CommandResponse{
 			ID:      command.ID,
 			Success: false,
-			Error:   "Invalid payload format for ssh_command",
+			Error:   "Invalid payload format for local_command",
 		}
 	}
 
@@ -465,7 +501,7 @@ func (c *Client) handleSSHCommand(ctx context.Context, command Command) CommandR
 		return CommandResponse{
 			ID:      command.ID,
 			Success: false,
-			Error:   "command is required for ssh_command",
+			Error:   "command is required for local_command",
 		}
 	}
 
@@ -613,8 +649,8 @@ func (c *Client) handleQuickCommand(ctx context.Context, command Command) Comman
 		return c.handleAPICall(ctx, newCommand)
 	case "http_request":
 		return c.handleHTTPRequest(ctx, newCommand)
-	case "ssh_command":
-		return c.handleSSHCommand(ctx, newCommand)
+	case "local_command":
+		return c.handleLocalCommand(ctx, newCommand)
 	default:
 		return CommandResponse{
 			ID:      command.ID,
@@ -623,210 +659,6 @@ func (c *Client) handleQuickCommand(ctx context.Context, command Command) Comman
 		}
 	}
 }
-
-// Point-app device command handlers
-
-//func (c *Client) handleOpenCell(ctx context.Context, command Command) CommandResponse {
-//	payload, ok := command.Payload.(map[string]interface{})
-//	if !ok {
-//		return CommandResponse{
-//			ID:      command.ID,
-//			Success: false,
-//			Error:   "Invalid payload format for open_cell",
-//		}
-//	}
-//
-//	cellNumber, _ := payload["cell_number"].(float64)
-//	reason, _ := payload["reason"].(string)
-//
-//	// Simulate opening cell
-//	return CommandResponse{
-//		ID:      command.ID,
-//		Success: true,
-//		Data: map[string]interface{}{
-//			"message":     fmt.Sprintf("Cell %d opened successfully", int(cellNumber)),
-//			"cell_number": int(cellNumber),
-//			"reason":      reason,
-//			"opened_at":   time.Now().Format(time.RFC3339),
-//		},
-//	}
-//}
-
-//func (c *Client) handleGetCellStatus(ctx context.Context, command Command) CommandResponse {
-//	payload, ok := command.Payload.(map[string]interface{})
-//	if !ok {
-//		return CommandResponse{
-//			ID:      command.ID,
-//			Success: false,
-//			Error:   "Invalid payload format for get_cell_status",
-//		}
-//	}
-//
-//	cellNumber, _ := payload["cell_number"].(float64)
-//
-//	log.Printf("Getting status for cell %d", int(cellNumber))
-//
-//	// Simulate getting cell status
-//	return CommandResponse{
-//		ID:      command.ID,
-//		Success: true,
-//		Data: map[string]interface{}{
-//			"cell_number":        int(cellNumber),
-//			"is_physically_open": false,
-//			"status":             "closed",
-//			"code":               12345,
-//			"phone":              "+1234567890",
-//			"provider_id":        "provider1",
-//			"occupied_time":      "2024-01-01T10:00:00Z",
-//			"last_sensor_read":   time.Now().Format(time.RFC3339),
-//		},
-//	}
-//}
-
-//func (c *Client) handleAddKey(ctx context.Context, command Command) CommandResponse {
-//	payload, ok := command.Payload.(map[string]interface{})
-//	if !ok {
-//		return CommandResponse{
-//			ID:      command.ID,
-//			Success: false,
-//			Error:   "Invalid payload format for add_key",
-//		}
-//	}
-//
-//	cellNumber, _ := payload["cell_number"].(float64)
-//	pinCode, _ := payload["pin_code"].(float64)
-//	description, _ := payload["description"].(string)
-//
-//	log.Printf("Adding key %d to cell %d with description: %s", int(pinCode), int(cellNumber), description)
-//
-//	// Simulate adding key
-//	return CommandResponse{
-//		ID:      command.ID,
-//		Success: true,
-//		Data: map[string]interface{}{
-//			"message":     fmt.Sprintf("Key %d added to cell %d", int(pinCode), int(cellNumber)),
-//			"cell_number": int(cellNumber),
-//			"pin_code":    int(pinCode),
-//			"description": description,
-//			"added_at":    time.Now().Format(time.RFC3339),
-//		},
-//	}
-//}
-
-//func (c *Client) handleDeleteKey(ctx context.Context, command Command) CommandResponse {
-//	payload, ok := command.Payload.(map[string]interface{})
-//	if !ok {
-//		return CommandResponse{
-//			ID:      command.ID,
-//			Success: false,
-//			Error:   "Invalid payload format for delete_key",
-//		}
-//	}
-//
-//	cellNumber, _ := payload["cell_number"].(float64)
-//	keyId, _ := payload["key_id"].(string)
-//
-//	log.Printf("Deleting key %s from cell %d", keyId, int(cellNumber))
-//
-//	// Simulate deleting key
-//	return CommandResponse{
-//		ID:      command.ID,
-//		Success: true,
-//		Data: map[string]interface{}{
-//			"message":     fmt.Sprintf("Key %s deleted from cell %d", keyId, int(cellNumber)),
-//			"cell_number": int(cellNumber),
-//			"key_id":      keyId,
-//			"deleted_at":  time.Now().Format(time.RFC3339),
-//		},
-//	}
-//}
-
-//func (c *Client) handleSyncKeys(ctx context.Context, command Command) CommandResponse {
-//	payload, ok := command.Payload.(map[string]interface{})
-//	if !ok {
-//		return CommandResponse{
-//			ID:      command.ID,
-//			Success: false,
-//			Error:   "Invalid payload format for sync_keys",
-//		}
-//	}
-//
-//	addedKeys, _ := payload["added_keys"].([]interface{})
-//	deletedKeys, _ := payload["deleted_keys"].([]interface{})
-//
-//	addedCount := len(addedKeys)
-//	deletedCount := len(deletedKeys)
-//
-//	log.Printf("Syncing keys: %d added, %d deleted", addedCount, deletedCount)
-//
-//	// Simulate key synchronization
-//	return CommandResponse{
-//		ID:      command.ID,
-//		Success: true,
-//		Data: map[string]interface{}{
-//			"message":        fmt.Sprintf("Synchronization completed: %d keys added, %d keys deleted", addedCount, deletedCount),
-//			"added_count":    addedCount,
-//			"deleted_count":  deletedCount,
-//			"sync_timestamp": time.Now().Format(time.RFC3339),
-//		},
-//	}
-//}
-
-//func (c *Client) handleReboot(ctx context.Context, command Command) CommandResponse {
-//	log.Printf("Reboot command received")
-//
-//	return CommandResponse{
-//		ID:      command.ID,
-//		Success: true,
-//		Data: map[string]interface{}{
-//			"status":  "rebooting",
-//			"message": "Device will reboot in 5 seconds",
-//		},
-//	}
-//}
-
-//func (c *Client) handleStatus(ctx context.Context, command Command) CommandResponse {
-//	log.Printf("Status command received")
-//
-//	return CommandResponse{
-//		ID:      command.ID,
-//		Success: true,
-//		Data: map[string]interface{}{
-//			"name":        "point-app-device",
-//			"uptime":      "2h30m15s",
-//			"memory":      "256MB",
-//			"cpu":         "15%",
-//			"temperature": "45°C",
-//			"last_boot":   "2024-01-01T08:00:00Z",
-//			"version":     "1.0.0",
-//			"connected":   true,
-//		},
-//	}
-//}
-
-//func (c *Client) handleUpdate(ctx context.Context, command Command) CommandResponse {
-//	payload, ok := command.Payload.(map[string]interface{})
-//	if !ok {
-//		return CommandResponse{
-//			ID:      command.ID,
-//			Success: false,
-//			Error:   "Invalid payload format for update",
-//		}
-//	}
-//
-//	version, _ := payload["version"].(string)
-//
-//	log.Printf("Update command received for version: %s", version)
-//
-//	return CommandResponse{
-//		ID:      command.ID,
-//		Success: true,
-//		Data: map[string]interface{}{
-//			"status":  "updating",
-//			"version": version,
-//		},
-//	}
-//}
 
 func (c *Client) handleCustom(ctx context.Context, command Command) CommandResponse {
 	log.Printf("Custom command received: %+v", command.Payload)
@@ -838,5 +670,160 @@ func (c *Client) handleCustom(ctx context.Context, command Command) CommandRespo
 			"message":          "Custom command executed",
 			"received_payload": command.Payload,
 		},
+	}
+}
+
+func (c *Client) handleInteractiveShellStart(ctx context.Context, command Command) CommandResponse {
+	// Extract payload parameters
+	payload, _ := command.Payload.(map[string]interface{})
+	cols := 80
+	rows := 24
+	if c, ok := payload["cols"].(float64); ok {
+		cols = int(c)
+	}
+	if r, ok := payload["rows"].(float64); ok {
+		rows = int(r)
+	}
+
+	shell := os.Getenv("SHELL")
+	if shell == "" {
+		shell = "/bin/sh"
+	}
+
+	cmd := exec.Command(shell)
+	f, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows)})
+	if err != nil {
+		return CommandResponse{
+			ID:      command.ID,
+			Success: false,
+			Error:   fmt.Sprintf("Failed to start PTY: %v", err),
+		}
+	}
+
+	sessionID := fmt.Sprintf("pty-%d", time.Now().UnixNano())
+	session := &PTYSession{
+		ID:      sessionID,
+		File:    f,
+		Command: cmd,
+	}
+
+	c.ptyMux.Lock()
+	c.ptySessions[sessionID] = session
+	c.ptyMux.Unlock()
+
+	// Read from PTY and send to server
+	go func() {
+		buf := make([]byte, 4096)
+		for {
+			n, err := f.Read(buf)
+			if n > 0 {
+				output := string(buf[:n])
+				if c.protocol == "tcp" {
+					c.tcpClient.SendCommand(map[string]interface{}{
+						"type": "shell_output",
+						"payload": map[string]interface{}{
+							"session_id": sessionID,
+							"output":     output,
+						},
+						"id": "shell_output_" + sessionID,
+					})
+				} else {
+					c.wsClient.SendCommand("shell_output", map[string]interface{}{
+						"session_id": sessionID,
+						"output":     output,
+					}, "shell_output_"+sessionID)
+				}
+			}
+			if err != nil {
+				if err != io.EOF {
+					log.Printf("PTY read error for session %s: %v", sessionID, err)
+				}
+				break
+			}
+		}
+		c.cleanupPTYSession(sessionID)
+	}()
+
+	return CommandResponse{
+		ID:      command.ID,
+		Success: true,
+		Data: map[string]interface{}{
+			"session_id": sessionID,
+		},
+	}
+}
+
+func (c *Client) handleShellInput(ctx context.Context, command Command) CommandResponse {
+	payload, ok := command.Payload.(map[string]interface{})
+	if !ok {
+		return CommandResponse{ID: command.ID, Success: false, Error: "Invalid payload"}
+	}
+
+	sessionID, _ := payload["session_id"].(string)
+	input, _ := payload["input"].(string)
+
+	c.ptyMux.Lock()
+	session, ok := c.ptySessions[sessionID]
+	c.ptyMux.Unlock()
+
+	if !ok {
+		return CommandResponse{ID: command.ID, Success: false, Error: "Session not found"}
+	}
+
+	_, err := session.File.WriteString(input)
+	if err != nil {
+		return CommandResponse{ID: command.ID, Success: false, Error: fmt.Sprintf("Write error: %v", err)}
+	}
+
+	return CommandResponse{ID: command.ID, Success: true}
+}
+
+func (c *Client) handleShellResize(ctx context.Context, command Command) CommandResponse {
+	payload, ok := command.Payload.(map[string]interface{})
+	if !ok {
+		return CommandResponse{ID: command.ID, Success: false, Error: "Invalid payload"}
+	}
+
+	sessionID, _ := payload["session_id"].(string)
+	cols, _ := payload["cols"].(float64)
+	rows, _ := payload["rows"].(float64)
+
+	c.ptyMux.Lock()
+	session, ok := c.ptySessions[sessionID]
+	c.ptyMux.Unlock()
+
+	if !ok {
+		return CommandResponse{ID: command.ID, Success: false, Error: "Session not found"}
+	}
+
+	err := pty.Setsize(session.File, &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows)})
+	if err != nil {
+		return CommandResponse{ID: command.ID, Success: false, Error: fmt.Sprintf("Resize error: %v", err)}
+	}
+
+	return CommandResponse{ID: command.ID, Success: true}
+}
+
+func (c *Client) cleanupPTYSession(sessionID string) {
+	c.ptyMux.Lock()
+	session, ok := c.ptySessions[sessionID]
+	if ok {
+		delete(c.ptySessions, sessionID)
+	}
+	c.ptyMux.Unlock()
+
+	if ok {
+		session.File.Close()
+		session.Command.Process.Kill()
+	}
+}
+
+func (c *Client) getSystemMetadata() map[string]interface{} {
+	hostname, _ := os.Hostname()
+	return map[string]interface{}{
+		"hostname": hostname,
+		"os":       runtime.GOOS,
+		"arch":     runtime.GOARCH,
+		"version":  "1.0.0",
 	}
 }

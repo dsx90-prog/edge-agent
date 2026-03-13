@@ -11,11 +11,11 @@ import (
 )
 
 type TCPClient struct {
-	conn           net.Conn
-	connected      bool
-	mu             sync.RWMutex
-	sendChan       chan []byte
 	commandHandler func(message map[string]interface{}) map[string]interface{}
+	conn           net.Conn
+	sendChan       chan []byte
+	mu             sync.RWMutex
+	connected      bool
 }
 
 func NewTCPClient() *TCPClient {
@@ -24,7 +24,7 @@ func NewTCPClient() *TCPClient {
 	}
 }
 
-func (c *TCPClient) Connect(ctx context.Context, address, clientID string) error {
+func (c *TCPClient) Connect(ctx context.Context, address, clientID string, metadata map[string]interface{}) error {
 	log.Printf("Connecting to TCP server: %s (client: %s)", address, clientID)
 
 	dialer := &net.Dialer{
@@ -47,6 +47,7 @@ func (c *TCPClient) Connect(ctx context.Context, address, clientID string) error
 	identification := map[string]interface{}{
 		"type":      "identify",
 		"client_id": clientID,
+		"metadata":  metadata,
 		"timestamp": time.Now().Unix(),
 	}
 

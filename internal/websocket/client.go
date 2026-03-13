@@ -12,19 +12,21 @@ import (
 )
 
 type WSClient struct {
-	conn           *websocket.Conn
-	connected      bool
-	mu             sync.RWMutex
-	sendChan       chan []byte
-	reconnect      bool
-	pingInterval   time.Duration
 	commandHandler func(message WSMessage) WSMessage
+	conn           *websocket.Conn
+	sendChan       chan []byte
+	mu             sync.RWMutex
+	writeMu        sync.Mutex
+	pingInterval   time.Duration
+	connected      bool
+	reconnect      bool
 }
 
 type WSMessage struct {
 	Type    string      `json:"type"`
-	Payload interface{} `json:"payload"`
 	ID      string      `json:"id"`
+	Payload interface{} `json:"payload"`
+	Success bool        `json:"success"`
 }
 
 func NewWSClient() *WSClient {
@@ -34,7 +36,7 @@ func NewWSClient() *WSClient {
 	}
 }
 
-func (c *WSClient) Connect(ctx context.Context, wsURL, clientID string) error {
+func (c *WSClient) Connect(ctx context.Context, wsURL, clientID string, metadata map[string]interface{}) error {
 	log.Printf("Connecting to WebSocket: %s (client: %s)", wsURL, clientID)
 
 	// Set dial timeout
@@ -58,6 +60,7 @@ func (c *WSClient) Connect(ctx context.Context, wsURL, clientID string) error {
 	identification := map[string]interface{}{
 		"type":      "identify",
 		"client_id": clientID,
+		"metadata":  metadata,
 		"timestamp": time.Now().Unix(),
 	}
 
@@ -91,7 +94,9 @@ func (c *WSClient) Disconnect() error {
 	c.reconnect = false
 
 	if c.conn != nil {
+		c.writeMu.Lock()
 		err := c.conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
+		c.writeMu.Unlock()
 		if err != nil {
 			log.Printf("Error sending close message: %v", err)
 		}
@@ -117,6 +122,7 @@ func (c *WSClient) SendCommand(cmdType string, payload interface{}, id string) e
 		Type:    cmdType,
 		Payload: payload,
 		ID:      id,
+		Success: true,
 	}
 
 	data, err := json.Marshal(message)
@@ -161,23 +167,18 @@ func (c *WSClient) readPump(ctx context.Context) {
 }
 
 func (c *WSClient) writePump(ctx context.Context) {
-	ticker := time.NewTicker(c.pingInterval)
-	defer ticker.Stop()
-
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case data := <-c.sendChan:
-			log.Printf("Writing to WebSocket: %s", string(data))
+			c.writeMu.Lock()
 			err := c.conn.WriteMessage(websocket.TextMessage, data)
+			c.writeMu.Unlock()
 			if err != nil {
 				log.Printf("WebSocket write error: %v", err)
 				return
 			}
-			log.Printf("Message written successfully")
-		case <-ticker.C:
-			// Ping handled by pingPump
 		}
 	}
 }
@@ -192,7 +193,9 @@ func (c *WSClient) pingPump(ctx context.Context) {
 			return
 		case <-ticker.C:
 			if c.IsConnected() {
+				c.writeMu.Lock()
 				err := c.conn.WriteMessage(websocket.PingMessage, nil)
+				c.writeMu.Unlock()
 				if err != nil {
 					log.Printf("WebSocket ping error: %v", err)
 					return

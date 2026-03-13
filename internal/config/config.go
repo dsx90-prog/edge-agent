@@ -11,49 +11,49 @@ import (
 )
 
 type Config struct {
+	QuickCommands map[string]interface{} `yaml:"quick_commands"`
+
 	APIProxy struct {
-		BaseURL string            `yaml:"base_url" env-required:"true"`
-		Timeout time.Duration     `yaml:"timeout" env-default:"30s"`
 		Headers map[string]string `yaml:"headers"`
 		Auth    struct {
 			Token string `yaml:"token"`
 			Type  string `yaml:"type" env-default:"Bearer"`
 		} `yaml:"auth"`
+		BaseURL string        `yaml:"base_url" env-required:"true"`
+		Timeout time.Duration `yaml:"timeout" env-default:"30s"`
 	} `yaml:"api_proxy" env-required:"true"`
 
 	WebSocket struct {
-		Enabled   bool   `yaml:"enabled" env-default:"false"`
-		URL       string `yaml:"url" env-default:""`
-		ClientID  string `yaml:"client_id" env-default:"socket-proxy-client"`
 		Protocol  string `yaml:"protocol" env-default:"websocket"` // "websocket" or "tcp"
+		ClientID  string `yaml:"client_id" env-default:"socket-proxy-client"`
+		URL       string `yaml:"url" env-default:""`
 		Reconnect struct {
-			Enabled           bool          `yaml:"enabled" env-default:"true"`
-			MaxAttempts       int           `yaml:"max_attempts" env-default:"5"`
+			BackoffMultiplier float64       `yaml:"backoff_multiplier"`
+			MaxDelay          time.Duration `yaml:"max_delay"`
 			InitialDelay      time.Duration `yaml:"initial_delay" env-default:"5s"`
-			MaxDelay          time.Duration `yaml:"max_delay" env-default:"60s"`
-			BackoffMultiplier float64       `yaml:"backoff_multiplier" env-default:"2"`
+			MaxAttempts       int           `yaml:"max_attempts" env-default:"5"`
+			Enabled           bool          `yaml:"enabled" env-default:"true"`
 		} `yaml:"reconnect"`
+		Enabled bool `yaml:"enabled" env-default:"false"`
 	} `yaml:"websocket"  env-required:"true"`
 
-	QuickCommands map[string]interface{} `yaml:"quick_commands"`
-
 	EnabledCommands struct {
-		APICall     bool `yaml:"api_call" env-default:"true"`
-		HTTPRequest bool `yaml:"http_request" env-default:"true"`
-		SSHCommand  bool `yaml:"ssh_command" env-default:"true"`
+		HTTPRequest  bool `yaml:"http_request" env-default:"true"`
+		APICall      bool `yaml:"api_call" env-default:"true"`
+		LocalCommand bool `yaml:"local_command" env-default:"true"`
 	} `yaml:"enabled_commands"`
 
 	Logging struct {
-		Level  string `yaml:"level" env-default:"info"`
-		Format string `yaml:"format" env-default:"text"`
 		File   string `yaml:"file"`
+		Format string `yaml:"format" env-default:"text"`
+		Level  string `yaml:"level" env-default:"info"`
 	} `yaml:"logging"`
 }
 
 type Logging struct {
-	Level  string `yaml:"level" env-default:"info"`
-	Format string `yaml:"format" env-default:"text"`
 	File   string `yaml:"file"`
+	Format string `yaml:"format" env-default:"text"`
+	Level  string `yaml:"level" env-default:"info"`
 }
 
 var instance *Config
