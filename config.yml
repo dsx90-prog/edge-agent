@@ -16,7 +16,7 @@ api_proxy:
 # WebSocket client configuration (for connecting to external WebSocket servers)
 websocket:
   enabled: true  # Enable WebSocket client
-  url: "ws://localhost:8081/commands"  # WebSocket server URL
+  url: "ws://localhost:8081"  # WebSocket server URL
   client_id: "000000"  # Client identifier
   protocol: "websocket"  # Protocol: "websocket" or "tcp"
   reconnect:
