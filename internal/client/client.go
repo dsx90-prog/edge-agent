@@ -8,6 +8,7 @@ import (
 	"edge-agent/internal/proxy"
 	"edge-agent/internal/tcp"
 	"edge-agent/internal/websocket"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"log"
@@ -65,8 +66,8 @@ func NewClient(cfg *config.Config) *Client {
 		ptySessions: make(map[string]*PTYSession),
 	}
 
-	// Initialize file manager if configured
-	if cfg.FileManager.BasePath != "" {
+	// Initialize file manager if configured and enabled
+	if cfg.FileManager.Enabled && cfg.FileManager.BasePath != "" {
 		fm, err := filemanager.NewFileManager(filemanager.Config{BasePath: cfg.FileManager.BasePath})
 		if err != nil {
 			log.Printf("Warning: Failed to initialize file manager: %v", err)
@@ -351,6 +352,7 @@ func (c *Client) GetStats() map[string]interface{} {
 			"api_call":      c.config.EnabledCommands.APICall,
 			"http_request":  c.config.EnabledCommands.HTTPRequest,
 			"local_command": c.config.EnabledCommands.LocalCommand,
+			"file_manager":  c.config.FileManager.Enabled,
 		},
 	}
 }
@@ -405,11 +407,25 @@ func (c *Client) processCommand(ctx context.Context, command Command) CommandRes
 	case "custom":
 		return c.handleCustom(ctx, command)
 	case "file_list":
+		if !c.config.FileManager.Enabled {
+			return CommandResponse{ID: command.ID, Success: false, Error: "File manager is disabled"}
+		}
 		return c.handleFileList(ctx, command)
 	case "file_download":
+		if !c.config.FileManager.Enabled {
+			return CommandResponse{ID: command.ID, Success: false, Error: "File manager is disabled"}
+		}
 		return c.handleFileDownload(ctx, command)
 	case "file_upload":
+		if !c.config.FileManager.Enabled {
+			return CommandResponse{ID: command.ID, Success: false, Error: "File manager is disabled"}
+		}
 		return c.handleFileUpload(ctx, command)
+	case "file_delete":
+		if !c.config.FileManager.Enabled {
+			return CommandResponse{ID: command.ID, Success: false, Error: "File manager is disabled"}
+		}
+		return c.handleFileDelete(ctx, command)
 	default:
 		return CommandResponse{
 			ID:      command.ID,
@@ -899,10 +915,37 @@ func (c *Client) handleFileUpload(ctx context.Context, command Command) CommandR
 	if d, ok := payload["data"].([]byte); ok {
 		data = d
 	} else if s, ok := payload["data"].(string); ok {
-		data = []byte(s)
+		// Test server sends it as base64
+		decoded, err := base64.StdEncoding.DecodeString(s)
+		if err == nil {
+			data = decoded
+		} else {
+			// Fallback to raw bytes if not valid base64
+			data = []byte(s)
+		}
 	}
 
 	err := c.fileMgr.UploadFile(path, data)
+	if err != nil {
+		return CommandResponse{ID: command.ID, Success: false, Error: err.Error()}
+	}
+	return CommandResponse{ID: command.ID, Success: true}
+}
+
+func (c *Client) handleFileDelete(ctx context.Context, command Command) CommandResponse {
+	if c.fileMgr == nil {
+		return CommandResponse{ID: command.ID, Success: false, Error: "File manager not initialized on agent"}
+	}
+	payload, ok := command.Payload.(map[string]interface{})
+	if !ok {
+		return CommandResponse{ID: command.ID, Success: false, Error: "Invalid payload"}
+	}
+	path, _ := payload["path"].(string)
+	if path == "" {
+		return CommandResponse{ID: command.ID, Success: false, Error: "path is required"}
+	}
+
+	err := c.fileMgr.DeleteFile(path)
 	if err != nil {
 		return CommandResponse{ID: command.ID, Success: false, Error: err.Error()}
 	}

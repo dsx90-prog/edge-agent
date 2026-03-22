@@ -31,6 +31,8 @@ type FileManager interface {
 	DownloadFile(relPath string) ([]byte, error)
 	// UploadFile writes data to the given relative path, creating directories as needed.
 	UploadFile(relPath string, data []byte) error
+	// DeleteFile removes the file or directory at the given relative path.
+	DeleteFile(relPath string) error
 }
 
 // LocalFileManager implements FileManager using the local filesystem.
@@ -120,4 +122,14 @@ func (fm *LocalFileManager) UploadFile(relPath string, data []byte) error {
 		return err
 	}
 	return os.WriteFile(absPath, data, 0644)
+}
+
+// DeleteFile removes the file or directory at the given relative path.
+func (fm *LocalFileManager) DeleteFile(relPath string) error {
+	cleanPath := filepath.Clean(relPath)
+	if cleanPath == "." || cleanPath == ".." || strings.HasPrefix(cleanPath, "../") {
+		return errors.New("invalid relative path")
+	}
+	absPath := filepath.Join(fm.basePath, cleanPath)
+	return os.RemoveAll(absPath)
 }

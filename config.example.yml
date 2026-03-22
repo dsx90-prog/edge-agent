@@ -93,3 +93,7 @@ logging:
   level: "info"  # debug, info, warn, error
   format: "text"  # text, json
   file: "socket-proxy.log"  # Optional: log to file
+
+file_manager:
+  base_path: "./"  # Default to current directory or whatever user wants
+  enabled: true   # Enable/disable file manager

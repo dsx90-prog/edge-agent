@@ -51,6 +51,7 @@ type Config struct {
 
 	FileManager struct {
 		BasePath string `yaml:"base_path"`
+		Enabled  bool   `yaml:"enabled" env-default:"true"`
 	} `yaml:"file_manager"`
 }
 

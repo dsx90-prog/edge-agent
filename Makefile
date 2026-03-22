@@ -1,4 +1,4 @@
-.PHONY: build run clean test deps
+.PHONY: build run clean test deps deploy-compiled compile-only
 
 # Build the application
 build:
@@ -63,3 +63,38 @@ status-service:
 # View logs
 logs:
 	sudo journalctl -u socket-proxy-service -f
+
+# Compile and deploy to compiled-edge-agent repository (Raspberry Pi build)
+deploy-compiled: clean
+	@echo "Building edge-agent for Raspberry Pi (ARM64)..."
+	GOOS=linux GOARCH=arm64 go build -o edge-agent cmd/main.go
+	@echo "Creating compiled directory..."
+	mkdir -p compiled
+	@echo "Copying files to compiled directory..."
+	cp edge-agent compiled/
+	cp config.yml compiled/
+	@echo "Initializing git repository in compiled directory..."
+	cd compiled && \
+	if [ ! -d .git ]; then \
+		git init; \
+		git remote add origin git@hub.mos.ru:atm-post/compiled-edge-agent.git; \
+	fi
+	@echo "Adding and committing files..."
+	cd compiled && \
+	git add edge-agent config.yml; \
+	git commit -m "Deploy edge-agent for Raspberry Pi with config - $$(date +'%Y-%m-%d %H:%M:%S')" || echo "No changes to commit"
+	@echo "Pushing to repository..."
+	cd compiled && \
+	git push origin main || git push origin master || echo "Push failed - check branch name"
+	@echo "Deployment completed successfully!"
+
+# Quick compile only for Raspberry Pi (without git operations)
+compile-only: clean
+	@echo "Building edge-agent for Raspberry Pi (ARM64)..."
+	GOOS=linux GOARCH=arm64 go build -o edge-agent cmd/main.go
+	@echo "Creating compiled directory..."
+	mkdir -p compiled
+	@echo "Copying files to compiled directory..."
+	cp edge-agent compiled/
+	cp config.yml compiled/
+	@echo "Compilation completed!"

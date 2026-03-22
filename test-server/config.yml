@@ -1,7 +1,7 @@
 server:
-  agent_port: ":8081"
+  agent_port: ":9091"
   ssh_port:   ":2222"
-  web_port:   ":8080"
+  web_port:   ":9090"
 
 commands:
   # Examples of predefined commands
@@ -12,7 +12,7 @@ commands:
       method: "POST"
       headers:
         Content-Type: "application/json"
-  
+
   list_cells:
     type: "api_call"
     payload:
@@ -20,7 +20,7 @@ commands:
       method: "GET"
       headers:
         Content-Type: "application/json"
-  
+
   sys_info:
     type: "local_command"
     payload:
@@ -58,3 +58,5 @@ templates:
     type: "custom"
     payload:
       key: "value"
+
+  # Other commands...

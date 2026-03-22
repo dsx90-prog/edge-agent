@@ -666,6 +666,8 @@
             border-radius: 16px;
             width: 90%;
             max-width: 1000px;
+            height: 80vh;
+            min-height: 400px;
             max-height: 90%;
             display: flex;
             flex-direction: column;
@@ -697,11 +699,9 @@
 
         .modal-content {
             flex: 1;
-            overflow: auto;
-            padding: 24px;
+            overflow: hidden;
             display: flex;
-            align-items: center;
-            justify-content: center;
+            flex-direction: column;
             background: #0d0d0d;
         }
 
@@ -918,6 +918,19 @@
                                 Upload
                             </button>
                             <input type="file" id="fileInput" class="hidden" onchange="uploadFileAtSelected(this)">
+                            <button class="tool-btn" id="btnDeleteFile" disabled onclick="deleteSelectedFile()"
+                                title="Delete" style="color: var(--red);">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2">
+                                    <polyline points="3 6 5 6 21 6"></polyline>
+                                    <path
+                                        d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2">
+                                    </path>
+                                    <line x1="10" y1="11" x2="10" y2="17"></line>
+                                    <line x1="14" y1="11" x2="14" y2="17"></line>
+                                </svg>
+                                Delete
+                            </button>
                             <button class="tool-btn" onclick="fetchFiles()" title="Refresh">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                     stroke-width="2">
@@ -1098,8 +1111,24 @@
                 document.getElementById('activeAgentSubtext').textContent =
                     `${meta.hostname || 'Unknown'} | ${meta.os || 'unknown'} | v${meta.version || '1.0'}${cpu}${ram}${disk}${lat}`;
 
+                // Show/hide Files tab based on agent capability
+                const enabledCmds = meta.stats_enabled_commands || {};
+                const fmEnabled = enabledCmds.file_manager !== false; // Default to true if not specified
+                const btnFiles = document.querySelector('.tab-btn[data-tab="files"]');
+                if (btnFiles) {
+                    if (fmEnabled) {
+                        btnFiles.classList.remove('hidden');
+                    } else {
+                        btnFiles.classList.add('hidden');
+                        // If files tab was active, switch to terminal or control
+                        if (btnFiles.classList.contains('active')) {
+                            switchTab('terminal');
+                        }
+                    }
+                }
+
                 // If on Files tab, refresh file tree for this agent
-                if (document.querySelector('.tab-btn[data-tab="files"]').classList.contains('active')) {
+                if (fmEnabled && document.querySelector('.tab-btn[data-tab="files"]').classList.contains('active')) {
                     fetchFiles();
                 }
             } else {
@@ -1469,6 +1498,7 @@
             isFileSelected = !node.is_dir;
 
             document.getElementById('btnDownloadFile').disabled = !isFileSelected;
+            document.getElementById('btnDeleteFile').disabled = !selectedFilePath;
 
             document.querySelectorAll('.file-item').forEach(el => {
                 const nameEl = el.querySelector('.file-name');
@@ -1561,28 +1591,83 @@
 
             const downloadUrl = `/api/files/download?agent_id=${selectedAgent}&path=${encodeURIComponent(node.path)}`;
 
-            if (isImageFile(node.path)) {
-                const img = new Image();
-                img.onload = () => {
-                    content.innerHTML = '';
-                    content.appendChild(img);
-                };
-                img.onerror = () => {
-                    content.innerHTML = '<div class="empty-hint" style="color: var(--red)">Failed to load image</div>';
-                };
-                img.src = downloadUrl;
-            } else {
-                try {
-                    const res = await fetch(downloadUrl);
-                    if (!res.ok) throw new Error(await res.text());
-                    const text = await res.text();
-                    const pre = document.createElement('pre');
-                    pre.textContent = text;
-                    content.innerHTML = '';
-                    content.appendChild(pre);
-                } catch (e) {
-                    content.innerHTML = `<div class="empty-hint" style="color: var(--red)">Error loading text: ${e.message}</div>`;
+            try {
+                const res = await fetch(downloadUrl);
+                if (!res.ok) {
+                    const errText = await res.text();
+                    throw new Error(errText || `Server returned ${res.status}`);
                 }
+
+                const blob = await res.blob();
+                const type = blob.type;
+
+                if (isImageFile(node.path) || type.startsWith('image/')) {
+                    const url = URL.createObjectURL(blob);
+                    const img = new Image();
+                    img.onload = () => {
+                        content.innerHTML = '';
+                        content.style.display = 'flex';
+                        content.style.alignItems = 'center';
+                        content.style.justifyContent = 'center';
+                        content.style.padding = '24px';
+                        content.appendChild(img);
+                        img._blobUrl = url;
+                    };
+                    img.onerror = () => {
+                        content.innerHTML = `<div class="empty-hint" style="color: var(--red)">Failed to render image (Type: ${type}, Size: ${blob.size})</div>`;
+                        URL.revokeObjectURL(url);
+                    };
+                    img.src = url;
+                } else {
+                    content.style.display = 'flex';
+                    content.style.flexDirection = 'column';
+                    content.style.alignItems = 'stretch';
+                    content.style.justifyContent = 'stretch';
+                    content.style.padding = '0';
+                    let text = await blob.text();
+                    let mode = 'ace/mode/text';
+
+                    // Try to pretty print if it's JSON
+                    try {
+                        const jsonObj = JSON.parse(text);
+                        text = JSON.stringify(jsonObj, null, 2);
+                        mode = 'ace/mode/json';
+                    } catch (e) {
+                        // Not JSON, check extension
+                        const ext = node.path.split('.').pop().toLowerCase();
+                        if (ext === 'md') mode = 'ace/mode/markdown';
+                        else if (ext === 'go') mode = 'ace/mode/golang';
+                        else if (ext === 'yml' || ext === 'yaml') mode = 'ace/mode/yaml';
+                    }
+
+                    content.innerHTML = '<div id="acePreview" style="flex: 1; width: 100%;"></div>';
+
+                    if (window.ace) {
+                        setTimeout(() => {
+                            try {
+                                const editor = ace.edit("acePreview");
+                                editor.setTheme("ace/theme/one_dark");
+                                editor.session.setMode(mode);
+                                editor.setReadOnly(true);
+                                editor.setValue(text, -1);
+                                editor.setOptions({
+                                    fontSize: "12px",
+                                    fontFamily: "JetBrains Mono",
+                                    showPrintMargin: false,
+                                    scrollPastEnd: 0.1
+                                });
+                                editor.resize();
+                            } catch (aceErr) {
+                                console.error("Ace init error:", aceErr);
+                                content.innerHTML = `<pre style="padding: 24px; color: #ccc; white-space: pre-wrap; font-size: 13px; font-family: 'JetBrains Mono'; margin: 0; flex: 1; overflow: auto;">${text}</pre>`;
+                            }
+                        }, 50);
+                    } else {
+                        content.innerHTML = `<pre style="padding: 24px; color: #ccc; white-space: pre-wrap; font-size: 13px; font-family: 'JetBrains Mono'; margin: 0; flex: 1; overflow: auto;">${text}</pre>`;
+                    }
+                }
+            } catch (e) {
+                content.innerHTML = `<div class="empty-hint" style="color: var(--red)">Error: ${e.message}</div>`;
             }
         }
 
@@ -1636,6 +1721,30 @@
                 }
             };
             reader.readAsArrayBuffer(file);
+        }
+
+        async function deleteSelectedFile() {
+            if (!selectedFilePath || !selectedAgent) return;
+            if (!confirm(`Are you sure you want to delete ${selectedFilePath}?`)) return;
+
+            try {
+                const res = await fetch(`/api/files/delete?agent_id=${selectedAgent}&path=${encodeURIComponent(selectedFilePath)}`, {
+                    method: 'POST'
+                });
+                if (res.ok) {
+                    log(`Deleted ${selectedFilePath}`, 'ok');
+                    selectedFilePath = null;
+                    isFileSelected = false;
+                    document.getElementById('btnDownloadFile').disabled = true;
+                    document.getElementById('btnDeleteFile').disabled = true;
+                    fetchFiles();
+                } else {
+                    const err = await res.text();
+                    log(`Delete failed: ${err}`, 'error');
+                }
+            } catch (e) {
+                log(`Delete error: ${e.message}`, 'error');
+            }
         }
     </script>
     <div id="filePreviewModal" class="modal-overlay" onclick="if(event.target === this) closePreviewModal()">

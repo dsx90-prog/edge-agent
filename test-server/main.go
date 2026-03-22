@@ -201,6 +201,7 @@ func startWebServer(port string) {
 	mux.HandleFunc("/api/files/list", handleFileList)
 	mux.HandleFunc("/api/files/download", handleFileDownload)
 	mux.HandleFunc("/api/files/upload", handleFileUpload)
+	mux.HandleFunc("/api/files/delete", handleFileDelete)
 
 	// Serve static files (SPA)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -1011,24 +1012,32 @@ func handleFileDownload(w http.ResponseWriter, r *http.Request) {
 	var dataStr string
 	if payload != nil && payload["data"] != nil {
 		dataStr, _ = payload["data"].(string)
-	} else {
+	} else if resp["data"] != nil {
 		dataStr, _ = resp["data"].(string)
 	}
 
-	if dataStr == "" {
-		http.Error(w, "No data received from agent", http.StatusInternalServerError)
-		return
+	dataStr = strings.TrimSpace(dataStr)
+	if len(dataStr) > 100 {
+		log.Printf("Received data string (len: %d) starting with: %s...", len(dataStr), dataStr[:50])
 	}
 
 	// data is base64 encoded string by json.Marshal in agent
 	data, err := base64.StdEncoding.DecodeString(dataStr)
 	if err != nil {
-		// Try treating it as raw string if not base64
+		log.Printf("Std Base64 decode error for %s: %v. Trying RawStdEncoding...", relPath, err)
+		data, err = base64.RawStdEncoding.DecodeString(dataStr)
+	}
+
+	if err != nil {
+		log.Printf("CRITICAL: Failed all base64 decoding for %s: %v. Sending raw data as fallback.", relPath, err)
 		data = []byte(dataStr)
 	}
 
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filepath.Base(relPath)))
+	contentType := http.DetectContentType(data)
+	log.Printf("Serving file %s (size: %d, type: %s)", relPath, len(data), contentType)
+
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Disposition", fmt.Sprintf("inline; filename=%s", filepath.Base(relPath)))
 	w.Write(data)
 }
 
@@ -1082,4 +1091,46 @@ func handleFileUpload(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusCreated)
 	fmt.Fprintln(w, "File uploaded successfully to agent")
+}
+
+func handleFileDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost && r.Method != http.MethodDelete {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	agentID := r.URL.Query().Get("agent_id")
+	relPath := r.URL.Query().Get("path")
+	if relPath == "" {
+		http.Error(w, "path is required", http.StatusBadRequest)
+		return
+	}
+	if agentID == "" {
+		agents := am.ListAgents()
+		if len(agents) == 0 {
+			http.Error(w, "No agents connected", http.StatusServiceUnavailable)
+			return
+		}
+		agentID = agents[0]
+	}
+
+	resp, err := sendCommandToAgentCore(agentID, "file_delete", map[string]interface{}{
+		"path": relPath,
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if !resp["success"].(bool) {
+		payload, _ := resp["payload"].(map[string]interface{})
+		errMsg := resp["error"]
+		if payload != nil && payload["error"] != nil {
+			errMsg = payload["error"]
+		}
+		http.Error(w, fmt.Sprintf("%v", errMsg), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintln(w, "File deleted successfully from agent")
 }
