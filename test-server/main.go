@@ -55,6 +55,8 @@ type Agent struct {
 	sendMu   sync.Mutex
 	mu       sync.Mutex // Add a mutex for protecting agent-specific fields like Metadata
 	Metadata map[string]interface{}
+	Stats    map[string]interface{}
+	Latency  int64 // RTT in milliseconds
 }
 
 // Write sends a JSON message to the agent (works for both TCP and WebSocket)
@@ -278,11 +280,18 @@ func handleAPIAgents(w http.ResponseWriter, r *http.Request) {
 
 	var agentInfos []AgentInfo
 	for id, a := range am.agents {
-		a.mu.Lock() // Lock agent's mutex to safely read metadata
+		a.mu.Lock()
 		metadataCopy := make(map[string]interface{})
 		for k, v := range a.Metadata {
 			metadataCopy[k] = v
 		}
+		// Merge stats and latency into metadata for the frontend
+		if a.Stats != nil {
+			for k, v := range a.Stats {
+				metadataCopy["stats_"+k] = v
+			}
+		}
+		metadataCopy["latency_ms"] = a.Latency
 		a.mu.Unlock()
 
 		agentInfos = append(agentInfos, AgentInfo{
@@ -514,7 +523,7 @@ func handleAgentMessage(agentID string, msg map[string]interface{}, agent *Agent
 		clientID, _ := data["client_id"].(string)
 		metadata, _ := data["metadata"].(map[string]interface{})
 
-		if (metadata == nil || len(metadata) == 0) && clientID != "" {
+		if len(metadata) == 0 && clientID != "" {
 			log.Printf("Warning: Agent %s identified as %s but sent NO METADATA. Is it running old code?", agentID, clientID)
 		}
 
@@ -542,7 +551,38 @@ func handleAgentMessage(agentID string, msg map[string]interface{}, agent *Agent
 		}))
 
 	case "heartbeat":
-		log.Printf("Heartbeat from %s", agentID)
+		// Heartbeat can contain client_stats and timestamp
+		if agent != nil {
+			agent.mu.Lock()
+			if stats, ok := msg["client_stats"].(map[string]interface{}); ok {
+				agent.Stats = stats
+			} else if p, ok := msg["payload"].(map[string]interface{}); ok {
+				if stats, ok := p["client_stats"].(map[string]interface{}); ok {
+					agent.Stats = stats
+				}
+			}
+
+			// Calculate latency if timestamp is present
+			var ts int64
+			if t, ok := msg["timestamp"].(float64); ok {
+				ts = int64(t)
+			} else if p, ok := msg["payload"].(map[string]interface{}); ok {
+				if t, ok := p["timestamp"].(float64); ok {
+					ts = int64(t)
+				}
+			}
+
+			if ts > 0 {
+				now := time.Now().UnixNano()
+				// This measures one-way latency assuming synced clocks, or offset if not.
+				// Since we don't have sync, we'll treat it as RTT/2 or just a relative measure.
+				// Or we could send a pong back and measure full RTT.
+				// For now, let's just store the diff in ms.
+				agent.Latency = (now - ts) / 1000000
+			}
+			log.Printf("Heartbeat from %s: Latency=%dms, Stats=%+v", agentID, agent.Latency, agent.Stats)
+			agent.mu.Unlock()
+		}
 
 	case "ping":
 		resp := map[string]interface{}{

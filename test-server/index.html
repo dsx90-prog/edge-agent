@@ -1039,7 +1039,13 @@
                     if (id === selectedAgent) {
                         found = true;
                         // Update active badge if metadata changed
-                        document.getElementById('activeAgentSubtext').textContent = `${hostname} | ${os} | v${meta.version || '1.0'}`;
+                        const cpu = meta.stats_cpu_usage !== undefined ? ` | CPU: ${meta.stats_cpu_usage}%` : '';
+                        const ram = meta.stats_mem_usage !== undefined ? ` | RAM: ${meta.stats_mem_usage}%` : '';
+                        const disk = meta.stats_disk_free !== undefined ? ` | Disk: ${meta.stats_disk_free}GB` : '';
+                        const lat = meta.latency_ms !== undefined ? ` | Latency: ${meta.latency_ms}ms` : '';
+
+                        document.getElementById('activeAgentSubtext').textContent =
+                            `${hostname} | ${os} | v${meta.version || '1.0'}${cpu}${ram}${disk}${lat}`;
                     }
                 });
 
@@ -1084,8 +1090,13 @@
                 const displayId = id.length > 20 ? id.substring(0, 20) + '...' : id;
                 document.getElementById('activeAgentID').textContent = displayId;
                 document.getElementById('activeAgentID').title = id;
+                const cpu = meta.stats_cpu_usage !== undefined ? ` | CPU: ${meta.stats_cpu_usage}%` : '';
+                const ram = meta.stats_mem_usage !== undefined ? ` | RAM: ${meta.stats_mem_usage}%` : '';
+                const disk = meta.stats_disk_free !== undefined ? ` | Disk: ${meta.stats_disk_free}GB` : '';
+                const lat = meta.latency_ms !== undefined ? ` | Latency: ${meta.latency_ms}ms` : '';
+
                 document.getElementById('activeAgentSubtext').textContent =
-                    `${meta.hostname || 'Unknown'} | ${meta.os || 'unknown'} | v${meta.version || '1.0'}`;
+                    `${meta.hostname || 'Unknown'} | ${meta.os || 'unknown'} | v${meta.version || '1.0'}${cpu}${ram}${disk}${lat}`;
 
                 // If on Files tab, refresh file tree for this agent
                 if (document.querySelector('.tab-btn[data-tab="files"]').classList.contains('active')) {

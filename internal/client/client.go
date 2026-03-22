@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,6 +20,9 @@ import (
 	"time"
 
 	"github.com/creack/pty"
+	"github.com/shirou/gopsutil/v3/cpu"
+	"github.com/shirou/gopsutil/v3/disk"
+	"github.com/shirou/gopsutil/v3/mem"
 )
 
 type PTYSession struct {
@@ -289,6 +293,7 @@ func (c *Client) startConnectionClient(ctx context.Context) {
 						c.wsClient.SendCommand("heartbeat", map[string]interface{}{
 							"status":       "active",
 							"client_stats": c.GetStats(),
+							"timestamp":    time.Now().UnixNano(),
 						}, "heartbeat")
 					}
 				}
@@ -316,11 +321,32 @@ func (c *Client) GetStats() map[string]interface{} {
 		connected = c.wsClient != nil && c.wsClient.IsConnected()
 	}
 
+	cpuPerc, _ := cpu.Percent(0, false)
+	var cpuVal float64
+	if len(cpuPerc) > 0 {
+		cpuVal = math.Round(cpuPerc[0]*100) / 100
+	}
+
+	vm, _ := mem.VirtualMemory()
+	var memVal float64
+	if vm != nil {
+		memVal = math.Round(vm.UsedPercent*100) / 100
+	}
+
+	usage, _ := disk.Usage("/")
+	var diskFree float64
+	if usage != nil {
+		diskFree = math.Round(float64(usage.Free)/(1024*1024*1024)*100) / 100
+	}
+
 	return map[string]interface{}{
 		"running":   c.running,
 		"url":       c.config.WebSocket.URL,
 		"protocol":  c.protocol,
 		"connected": connected,
+		"cpu_usage": cpuVal,
+		"mem_usage": memVal,
+		"disk_free": diskFree, // in GB
 		"enabled_commands": map[string]bool{
 			"api_call":      c.config.EnabledCommands.APICall,
 			"http_request":  c.config.EnabledCommands.HTTPRequest,
@@ -899,10 +925,16 @@ func (c *Client) cleanupPTYSession(sessionID string) {
 
 func (c *Client) getSystemMetadata() map[string]interface{} {
 	hostname, _ := os.Hostname()
-	return map[string]interface{}{
+	stats := c.GetStats()
+	meta := map[string]interface{}{
 		"hostname": hostname,
 		"os":       runtime.GOOS,
 		"arch":     runtime.GOARCH,
 		"version":  "1.0.0",
 	}
+	// Add stats to metadata so they are available immediately
+	for k, v := range stats {
+		meta["stats_"+k] = v
+	}
+	return meta
 }
