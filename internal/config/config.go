@@ -48,6 +48,10 @@ type Config struct {
 		Format string `yaml:"format" env-default:"text"`
 		Level  string `yaml:"level" env-default:"info"`
 	} `yaml:"logging"`
+
+	FileManager struct {
+		BasePath string `yaml:"base_path"`
+	} `yaml:"file_manager"`
 }
 
 type Logging struct {

@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"edge-agent/internal/config"
+	"edge-agent/internal/filemanager"
 	"edge-agent/internal/local"
 	"edge-agent/internal/proxy"
 	"edge-agent/internal/tcp"
@@ -12,6 +13,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"sync"
 	"time"
@@ -48,6 +50,7 @@ type Client struct {
 	running     bool
 	ptySessions map[string]*PTYSession
 	ptyMux      sync.Mutex
+	fileMgr     filemanager.FileManager
 }
 
 func NewClient(cfg *config.Config) *Client {
@@ -56,6 +59,16 @@ func NewClient(cfg *config.Config) *Client {
 		apiClient:   proxy.NewAPIClient(cfg),
 		protocol:    cfg.WebSocket.Protocol,
 		ptySessions: make(map[string]*PTYSession),
+	}
+
+	// Initialize file manager if configured
+	if cfg.FileManager.BasePath != "" {
+		fm, err := filemanager.NewFileManager(filemanager.Config{BasePath: cfg.FileManager.BasePath})
+		if err != nil {
+			log.Printf("Warning: Failed to initialize file manager: %v", err)
+		} else {
+			client.fileMgr = fm
+		}
 	}
 
 	// Initialize client if enabled
@@ -365,6 +378,12 @@ func (c *Client) processCommand(ctx context.Context, command Command) CommandRes
 		return c.handleQuickCommand(ctx, command)
 	case "custom":
 		return c.handleCustom(ctx, command)
+	case "file_list":
+		return c.handleFileList(ctx, command)
+	case "file_download":
+		return c.handleFileDownload(ctx, command)
+	case "file_upload":
+		return c.handleFileUpload(ctx, command)
 	default:
 		return CommandResponse{
 			ID:      command.ID,
@@ -801,6 +820,66 @@ func (c *Client) handleShellResize(ctx context.Context, command Command) Command
 		return CommandResponse{ID: command.ID, Success: false, Error: fmt.Sprintf("Resize error: %v", err)}
 	}
 
+	return CommandResponse{ID: command.ID, Success: true}
+}
+
+func (c *Client) handleFileList(ctx context.Context, command Command) CommandResponse {
+	if c.fileMgr == nil {
+		return CommandResponse{ID: command.ID, Success: false, Error: "File manager not initialized on agent"}
+	}
+	nodes, err := c.fileMgr.ListDevFolders()
+	if err != nil {
+		return CommandResponse{ID: command.ID, Success: false, Error: err.Error()}
+	}
+	absPath, _ := filepath.Abs(c.config.FileManager.BasePath)
+	return CommandResponse{
+		ID:      command.ID,
+		Success: true,
+		Data: map[string]interface{}{
+			"nodes":     nodes,
+			"base_path": absPath,
+		},
+	}
+}
+
+func (c *Client) handleFileDownload(ctx context.Context, command Command) CommandResponse {
+	if c.fileMgr == nil {
+		return CommandResponse{ID: command.ID, Success: false, Error: "File manager not initialized on agent"}
+	}
+	payload, ok := command.Payload.(map[string]interface{})
+	if !ok {
+		return CommandResponse{ID: command.ID, Success: false, Error: "Invalid payload"}
+	}
+	path, _ := payload["path"].(string)
+	data, err := c.fileMgr.DownloadFile(path)
+	if err != nil {
+		return CommandResponse{ID: command.ID, Success: false, Error: err.Error()}
+	}
+	return CommandResponse{ID: command.ID, Success: true, Data: data}
+}
+
+func (c *Client) handleFileUpload(ctx context.Context, command Command) CommandResponse {
+	if c.fileMgr == nil {
+		return CommandResponse{ID: command.ID, Success: false, Error: "File manager not initialized on agent"}
+	}
+	payload, ok := command.Payload.(map[string]interface{})
+	if !ok {
+		return CommandResponse{ID: command.ID, Success: false, Error: "Invalid payload"}
+	}
+	path, _ := payload["path"].(string)
+
+	// Data can be string (if base64 or text) or []uint8 (if binary)
+	var data []byte
+	if d, ok := payload["data"].([]byte); ok {
+		data = d
+	} else if s, ok := payload["data"].(string); ok {
+		data = []byte(s)
+	}
+
+	err := c.fileMgr.UploadFile(path, data)
+	if err != nil {
+		return CommandResponse{ID: command.ID, Success: false, Error: err.Error()}
+	}
 	return CommandResponse{ID: command.ID, Success: true}
 }
 

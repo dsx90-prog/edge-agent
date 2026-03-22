@@ -3,14 +3,17 @@ package main
 import (
 	"crypto/rand"
 	"crypto/rsa"
+	"encoding/base64"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -22,7 +25,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Config represents the test server configuration
 type Config struct {
 	Server struct {
 		AgentPort string `yaml:"agent_port"`
@@ -152,6 +154,8 @@ func main() {
 
 	am = NewAgentManager()
 
+	am = NewAgentManager()
+
 	log.Printf("Loaded %d command templates from %s", len(appConfig.Commands), configPath)
 	log.Printf("Agent server port: %s", appConfig.Server.AgentPort)
 	log.Printf("SSH server port: %s", appConfig.Server.SSHPort)
@@ -190,6 +194,11 @@ func startWebServer(port string) {
 
 	// WebSocket agent terminal — интерактивный терминал конкретного агента
 	mux.HandleFunc("/agent-terminal", handleAgentTerminalWS)
+
+	// File Manager Endpoints
+	mux.HandleFunc("/api/files/list", handleFileList)
+	mux.HandleFunc("/api/files/download", handleFileDownload)
+	mux.HandleFunc("/api/files/upload", handleFileUpload)
 
 	// Serve static files (SPA)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -887,4 +896,150 @@ func encodeAgentCmd(cmdType string, payload interface{}) []byte {
 	}
 	b, _ := json.Marshal(msg)
 	return b
+}
+
+func handleFileList(w http.ResponseWriter, r *http.Request) {
+	agentID := r.URL.Query().Get("agent_id")
+	if agentID == "" {
+		agents := am.ListAgents()
+		if len(agents) == 0 {
+			http.Error(w, "No agents connected", http.StatusServiceUnavailable)
+			return
+		}
+		agentID = agents[0]
+	}
+
+	resp, err := sendCommandToAgentCore(agentID, "file_list", nil)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if !resp["success"].(bool) {
+		payload, _ := resp["payload"].(map[string]interface{})
+		errMsg := resp["error"]
+		if payload != nil && payload["error"] != nil {
+			errMsg = payload["error"]
+		}
+		http.Error(w, fmt.Sprintf("%v", errMsg), http.StatusInternalServerError)
+		return
+	}
+
+	payload, _ := resp["payload"].(map[string]interface{})
+	data := resp["data"]
+	if payload != nil && payload["data"] != nil {
+		data = payload["data"]
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(data)
+}
+
+func handleFileDownload(w http.ResponseWriter, r *http.Request) {
+	agentID := r.URL.Query().Get("agent_id")
+	relPath := r.URL.Query().Get("path")
+	if relPath == "" {
+		http.Error(w, "path is required", http.StatusBadRequest)
+		return
+	}
+	if agentID == "" {
+		agents := am.ListAgents()
+		if len(agents) == 0 {
+			http.Error(w, "No agents connected", http.StatusServiceUnavailable)
+			return
+		}
+		agentID = agents[0]
+	}
+
+	resp, err := sendCommandToAgentCore(agentID, "file_download", map[string]interface{}{"path": relPath})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if !resp["success"].(bool) {
+		payload, _ := resp["payload"].(map[string]interface{})
+		errMsg := resp["error"]
+		if payload != nil && payload["error"] != nil {
+			errMsg = payload["error"]
+		}
+		http.Error(w, fmt.Sprintf("%v", errMsg), http.StatusInternalServerError)
+		return
+	}
+
+	payload, _ := resp["payload"].(map[string]interface{})
+	var dataStr string
+	if payload != nil && payload["data"] != nil {
+		dataStr, _ = payload["data"].(string)
+	} else {
+		dataStr, _ = resp["data"].(string)
+	}
+
+	if dataStr == "" {
+		http.Error(w, "No data received from agent", http.StatusInternalServerError)
+		return
+	}
+
+	// data is base64 encoded string by json.Marshal in agent
+	data, err := base64.StdEncoding.DecodeString(dataStr)
+	if err != nil {
+		// Try treating it as raw string if not base64
+		data = []byte(dataStr)
+	}
+
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filepath.Base(relPath)))
+	w.Write(data)
+}
+
+func handleFileUpload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	agentID := r.URL.Query().Get("agent_id")
+	relPath := r.URL.Query().Get("path")
+	if relPath == "" {
+		http.Error(w, "path is required", http.StatusBadRequest)
+		return
+	}
+	if agentID == "" {
+		agents := am.ListAgents()
+		if len(agents) == 0 {
+			http.Error(w, "No agents connected", http.StatusServiceUnavailable)
+			return
+		}
+		agentID = agents[0]
+	}
+
+	fileData, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Send as base64 to avoid issues with binary data in JSON string fields
+	dataBase64 := base64.StdEncoding.EncodeToString(fileData)
+
+	resp, err := sendCommandToAgentCore(agentID, "file_upload", map[string]interface{}{
+		"path": relPath,
+		"data": dataBase64,
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if !resp["success"].(bool) {
+		payload, _ := resp["payload"].(map[string]interface{})
+		errMsg := resp["error"]
+		if payload != nil && payload["error"] != nil {
+			errMsg = payload["error"]
+		}
+		http.Error(w, fmt.Sprintf("%v", errMsg), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
+	fmt.Fprintln(w, "File uploaded successfully to agent")
 }

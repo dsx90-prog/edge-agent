@@ -507,8 +507,230 @@
             gap: 12px;
         }
 
+        /* FILE MANAGER */
+        .file-tree {
+            padding: 16px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        .file-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+            user-select: none;
+        }
+
+        .file-item:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .file-item.selected {
+            background: rgba(124, 77, 255, 0.2);
+            border-color: var(--accent);
+        }
+
+        .file-item svg {
+            width: 16px;
+            height: 16px;
+            flex-shrink: 0;
+        }
+
+        .file-item.dir svg {
+            color: #dcb67a;
+        }
+
+        .file-item.file svg {
+            color: #79c0ff;
+        }
+
+        .file-details {
+            margin-left: auto;
+            font-size: 11px;
+            color: var(--muted);
+        }
+
+        .file-children {
+            margin-left: 20px;
+            border-left: 1px solid var(--border);
+        }
+
+        .file-children.collapsed {
+            display: none;
+        }
+
+        .toggle-icon {
+            width: 14px;
+            height: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: transform 0.2s;
+            color: var(--muted);
+        }
+
+        .toggle-icon.expanded {
+            transform: rotate(90deg);
+        }
+
+        #tab-content-files {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+            gap: 16px;
+        }
+
+        .file-header-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: rgba(0, 0, 0, 0.1);
+            border-bottom: 1px solid var(--border);
+            min-height: 48px;
+        }
+
+        .breadcrumbs {
+            display: flex;
+            align-items: center;
+            gap: 2px;
+            font-size: 13px;
+            color: var(--muted);
+            padding: 10px 20px;
+            overflow-x: auto;
+            white-space: nowrap;
+            flex: 1;
+        }
+
+        .breadcrumb-item {
+            cursor: pointer;
+            padding: 2px 4px;
+            border-radius: 4px;
+            transition: all 0.2s;
+            color: var(--muted);
+        }
+
+        .breadcrumb-item:hover {
+            background: var(--accent);
+            color: white;
+        }
+
+        .breadcrumb-item.active {
+            color: var(--fg);
+            font-weight: 600;
+        }
+
+        .file-toolbar {
+            padding: 0 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
         .hidden {
             display: none !important;
+        }
+
+        /* MODAL */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            opacity: 0;
+            pointer-events: none;
+            transition: all 0.3s;
+            backdrop-filter: blur(8px);
+        }
+
+        .modal-overlay.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .modal-card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            width: 90%;
+            max-width: 1000px;
+            max-height: 90%;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            box-shadow: 0 24px 48px rgba(0, 0, 0, 0.5);
+            transform: scale(0.95);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .modal-overlay.active .modal-card {
+            transform: scale(1);
+        }
+
+        .modal-header {
+            padding: 16px 24px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .modal-title {
+            font-size: 14px;
+            font-family: monospace;
+            color: var(--fg);
+            word-break: break-all;
+        }
+
+        .modal-content {
+            flex: 1;
+            overflow: auto;
+            padding: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #0d0d0d;
+        }
+
+        .modal-content pre {
+            margin: 0;
+            font-size: 13px;
+            line-height: 1.6;
+            color: #d1d1d1;
+            white-space: pre-wrap;
+            word-break: break-all;
+            width: 100%;
+            height: 100%;
+        }
+
+        .modal-content img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            border-radius: 4px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+        }
+
+        .modal-footer {
+            padding: 12px 24px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+            background: rgba(255, 255, 255, 0.02);
         }
     </style>
 </head>
@@ -580,6 +802,14 @@
                                 <line x1="12" y1="19" x2="20" y2="19"></line>
                             </svg>
                             Terminal
+                        </button>
+                        <button class="tab-btn" data-tab="files">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z">
+                                </path>
+                            </svg>
+                            Files
                         </button>
                     </div>
                 </div>
@@ -661,6 +891,47 @@
                     </div>
                     <div class="term-container" id="term-box"></div>
                 </div>
+
+                <!-- FILES TAB -->
+                <div id="tab-content-files" class="card hidden">
+                    <div class="file-header-row">
+                        <div id="breadcrumbs" class="breadcrumbs"></div>
+                        <div class="file-toolbar">
+                            <button class="tool-btn" id="btnDownloadFile" disabled onclick="downloadSelectedFile()"
+                                title="Download">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v4"></path>
+                                    <polyline points="7 10 12 15 17 10"></polyline>
+                                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                                </svg>
+                                Download
+                            </button>
+                            <button class="tool-btn primary" onclick="document.getElementById('fileInput').click()"
+                                title="Upload">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2">
+                                    <polyline points="16 16 12 12 8 16"></polyline>
+                                    <line x1="12" y1="12" x2="12" y2="21"></line>
+                                    <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"></path>
+                                </svg>
+                                Upload
+                            </button>
+                            <input type="file" id="fileInput" class="hidden" onchange="uploadFileAtSelected(this)">
+                            <button class="tool-btn" onclick="fetchFiles()" title="Refresh">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2">
+                                    <polyline points="23 4 23 10 17 10"></polyline>
+                                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                                </svg>
+                                Refresh
+                            </button>
+                        </div>
+                    </div>
+                    <div id="fileTree" class="file-tree">
+                        <div class="empty-hint">Loading files...</div>
+                    </div>
+                </div>
             </div>
         </main>
     </div>
@@ -673,6 +944,7 @@
         let templates = {};
         let agentSessions = {}; // agentID -> { ws, xterm, fit, el }
         let aceEditor = null;
+        let agentBasePath = '';
 
         /** EDITOR INIT **/
         function initAce() {
@@ -697,8 +969,33 @@
             fetchAgents();
             fetchCommands();
             fetchTemplates();
+            // Don't call fetchFiles here, fetchAgents will auto-select and trigger it if needed
             setInterval(fetchAgents, 5000);
         };
+
+        /** TAB SWITCHING **/
+        function showTab(tab) {
+            document.querySelectorAll('.tab-btn[data-tab]').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.tab === tab);
+            });
+            document.getElementById('tab-content-cmds').classList.toggle('hidden', tab !== 'cmds');
+            document.getElementById('tab-content-terminal').classList.toggle('hidden', tab !== 'terminal');
+            document.getElementById('tab-content-files').classList.toggle('hidden', tab !== 'files');
+
+            if (tab === 'files') fetchFiles();
+            if (tab === 'terminal' && selectedAgent) {
+                if (!agentSessions[selectedAgent]) {
+                    openAgentTerminal(selectedAgent);
+                } else {
+                    setTimeout(() => agentSessions[selectedAgent].fit.fit(), 50);
+                }
+            }
+            updateTermStatus();
+        }
+
+        document.querySelectorAll('.tab-btn[data-tab]').forEach(btn => {
+            btn.addEventListener('click', () => showTab(btn.dataset.tab));
+        });
 
         /** API FETCHERS **/
         async function fetchAgents() {
@@ -712,8 +1009,13 @@
                     if (selectedAgent) selectAgent(null);
                     return;
                 }
-
                 list.innerHTML = '';
+
+                // Auto-select first agent if none selected
+                if (!selectedAgent && agents.length > 0) {
+                    selectAgent(agents[0].id, agents[0].metadata);
+                }
+
                 let found = false;
                 agents.forEach(a => {
                     const id = a.id;
@@ -784,6 +1086,11 @@
                 document.getElementById('activeAgentID').title = id;
                 document.getElementById('activeAgentSubtext').textContent =
                     `${meta.hostname || 'Unknown'} | ${meta.os || 'unknown'} | v${meta.version || '1.0'}`;
+
+                // If on Files tab, refresh file tree for this agent
+                if (document.querySelector('.tab-btn[data-tab="files"]').classList.contains('active')) {
+                    fetchFiles();
+                }
             } else {
                 view.classList.add('hidden');
                 placeholder.classList.remove('hidden');
@@ -812,35 +1119,6 @@
             }
         }
 
-        // Tab Switching
-        document.querySelectorAll('.tab-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                if (btn.classList.contains('sub-tab')) return; // ignore sub-tabs
-
-                const target = btn.dataset.tab;
-                if (!target) return;
-
-                // Toggle buttons
-                document.querySelectorAll('.tab-btn').forEach(b => {
-                    if (b.dataset.tab) b.classList.remove('active');
-                });
-                btn.classList.add('active');
-
-                // Toggle contents
-                document.getElementById('tab-content-cmds').classList.toggle('hidden', target !== 'cmds');
-                document.getElementById('tab-content-terminal').classList.toggle('hidden', target !== 'terminal');
-
-                if (target === 'terminal') {
-                    // Auto-connect if not connected for selected agent
-                    if (selectedAgent && !agentSessions[selectedAgent]) {
-                        openAgentTerminal(selectedAgent);
-                    } else if (selectedAgent && agentSessions[selectedAgent]) {
-                        setTimeout(() => agentSessions[selectedAgent].fit.fit(), 50);
-                    }
-                }
-                updateTermStatus();
-            });
-        });
 
         function switchSub(name) {
             const presetBtn = document.querySelector('button[onclick="switchSub(\'presets\')"]');
@@ -1057,7 +1335,333 @@
 
             aceEditor.setValue(JSON.stringify(tpl, null, 2), -1);
         }
+
+        /** FILE MANAGER LOGIC **/
+        let selectedFilePath = null;
+        let isFileSelected = false;
+        let expandedFolders = new Set(); // Store paths of expanded folders (initially empty = all collapsed)
+
+        async function fetchFiles() {
+            const treeEl = document.getElementById('fileTree');
+            if (treeEl.innerHTML === '') treeEl.innerHTML = '<div class="empty-hint">Loading file tree...</div>';
+
+            try {
+                const res = await fetch('/api/files/list');
+                const tree = await res.json();
+                treeEl.innerHTML = '';
+                if (!tree || tree.length === 0) {
+                    treeEl.innerHTML = '<div class="empty-hint">No files found or base path empty</div>';
+                    return;
+                }
+                renderFileTree(tree, treeEl);
+            } catch (e) {
+                treeEl.innerHTML = `<div class="empty-hint" style="color: var(--red)">Error: ${e.message}</div>`;
+            }
+        }
+
+        function renderFileTree(nodes, container) {
+            nodes.sort((a, b) => (b.is_dir - a.is_dir) || a.name.localeCompare(b.name));
+            nodes.forEach(node => {
+                const item = document.createElement('div');
+                item.className = `file-item ${node.is_dir ? 'dir' : 'file'}`;
+                if (selectedFilePath === node.path) item.classList.add('selected');
+
+                const isExpanded = expandedFolders.has(node.path);
+
+                // Toggle icon (arrow)
+                const toggleHtml = node.is_dir
+                    ? `<div class="toggle-icon ${isExpanded ? 'expanded' : ''}" onclick="toggleFolder('${node.path.replace(/'/g, "\\'")}'); event.stopPropagation();">
+                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                       </div>`
+                    : '<div style="width: 14px;"></div>';
+
+                // File/Folder icon
+                const icon = node.is_dir
+                    ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>'
+                    : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline></svg>';
+
+                item.innerHTML = `
+                    ${toggleHtml}
+                    ${icon}
+                    <span class="file-name" data-path="${node.path}">${node.name}</span>
+                    <span class="file-details">${node.is_dir ? '' : formatBytes(node.size)}</span>
+                `;
+
+                item.onclick = (e) => {
+                    e.stopPropagation();
+                    selectFile(node);
+                    if (node.is_dir) toggleFolder(node.path);
+                };
+
+                item.ondblclick = (e) => {
+                    e.stopPropagation();
+                    if (!node.is_dir) {
+                        openPreviewModal(node);
+                    }
+                };
+
+                container.appendChild(item);
+
+                if (node.is_dir && node.children && node.children.length > 0) {
+                    const childrenContainer = document.createElement('div');
+                    childrenContainer.className = `file-children ${isExpanded ? '' : 'collapsed'}`;
+                    renderFileTree(node.children, childrenContainer);
+                    container.appendChild(childrenContainer);
+                }
+            });
+        }
+
+        function toggleFolder(path) {
+            if (expandedFolders.has(path)) {
+                expandedFolders.delete(path);
+            } else {
+                expandedFolders.add(path);
+            }
+            // Rapid re-render
+            const treeEl = document.getElementById('fileTree');
+            const scrollTop = treeEl.scrollTop;
+            renderAll(); // Use a local render instead of full fetch for speed
+            treeEl.scrollTop = scrollTop;
+        }
+
+        let currentTreeData = null;
+        async function fetchFiles() {
+            if (!selectedAgent) {
+                document.getElementById('fileTree').innerHTML = '<div class="empty-hint">Please select an agent first</div>';
+                return;
+            }
+            try {
+                const res = await fetch(`/api/files/list?agent_id=${selectedAgent}`);
+                if (!res.ok) throw new Error(await res.text());
+                const data = await res.json();
+                currentTreeData = data.nodes || data;
+                agentBasePath = data.base_path || '';
+
+                if (agentBasePath && (!selectedFilePath || selectedFilePath === 'No file selected')) {
+                    renderBreadcrumbs('');
+                }
+                renderAll();
+            } catch (e) {
+                document.getElementById('fileTree').innerHTML = `<div class="empty-hint" style="color: var(--red)">Error: ${e.message}</div>`;
+            }
+        }
+
+        function renderAll() {
+            const treeEl = document.getElementById('fileTree');
+            if (!currentTreeData) return;
+            treeEl.innerHTML = '';
+            renderFileTree(currentTreeData, treeEl);
+        }
+
+        function selectFile(node) {
+            selectedFilePath = node.path;
+            isFileSelected = !node.is_dir;
+
+            document.getElementById('btnDownloadFile').disabled = !isFileSelected;
+
+            document.querySelectorAll('.file-item').forEach(el => {
+                const nameEl = el.querySelector('.file-name');
+                el.classList.toggle('selected', nameEl && nameEl.dataset.path === node.path);
+            });
+
+            renderBreadcrumbs(node.path);
+        }
+
+        function renderBreadcrumbs(path) {
+            const container = document.getElementById('breadcrumbs');
+            if (!container) return;
+            container.innerHTML = '';
+
+            const rootItem = document.createElement('span');
+            rootItem.className = 'breadcrumb-item' + (!path ? ' active' : '');
+            rootItem.textContent = agentBasePath || 'Root';
+            rootItem.onclick = () => {
+                selectedFilePath = '';
+                expandedFolders.clear();
+                renderAll();
+                renderBreadcrumbs('');
+            };
+            container.appendChild(rootItem);
+
+            if (!path) return;
+
+            const parts = path.split('/').filter(p => p);
+            let currentPath = '';
+
+            parts.forEach((part, index) => {
+                const sep = document.createElement('span');
+                sep.textContent = '/';
+                sep.style.opacity = '0.5';
+                container.appendChild(sep);
+
+                currentPath = currentPath ? currentPath + '/' + part : part;
+                const item = document.createElement('span');
+                item.className = 'breadcrumb-item' + (index === parts.length - 1 ? ' active' : '');
+                item.textContent = part;
+
+                const thisPath = currentPath;
+                item.onclick = () => {
+                    const node = findNodeByPath(currentTreeData, thisPath);
+                    if (node) {
+                        // Collapse everything BUT the path to this node
+                        const parents = [];
+                        const parts = thisPath.split('/');
+                        let curP = '';
+                        for (let i = 0; i < parts.length - 1; i++) {
+                            curP = curP ? curP + '/' + parts[i] : parts[i];
+                            parents.push(curP);
+                        }
+                        expandedFolders.clear();
+                        parents.forEach(p => expandedFolders.add(p));
+
+                        renderAll();
+                        selectFile(node);
+                    }
+                };
+                container.appendChild(item);
+            });
+        }
+
+        function findNodeByPath(nodes, path) {
+            if (!nodes) return null;
+            for (const node of nodes) {
+                if (node.path === path) return node;
+                if (node.children) {
+                    const found = findNodeByPath(node.children, path);
+                    if (found) return found;
+                }
+            }
+            return null;
+        }
+
+        function isImageFile(path) {
+            const ext = path.split('.').pop().toLowerCase();
+            return ['jpg', 'jpeg', 'png', 'gif', 'svg', 'webp', 'bmp'].includes(ext);
+        }
+
+        async function openPreviewModal(node) {
+            const modal = document.getElementById('filePreviewModal');
+            const title = document.getElementById('modalTitle');
+            const content = document.getElementById('modalContent');
+
+            title.textContent = node.path;
+            content.innerHTML = '<div class="empty-hint">Loading preview...</div>';
+            modal.classList.add('active');
+
+            const downloadUrl = `/api/files/download?agent_id=${selectedAgent}&path=${encodeURIComponent(node.path)}`;
+
+            if (isImageFile(node.path)) {
+                const img = new Image();
+                img.onload = () => {
+                    content.innerHTML = '';
+                    content.appendChild(img);
+                };
+                img.onerror = () => {
+                    content.innerHTML = '<div class="empty-hint" style="color: var(--red)">Failed to load image</div>';
+                };
+                img.src = downloadUrl;
+            } else {
+                try {
+                    const res = await fetch(downloadUrl);
+                    if (!res.ok) throw new Error(await res.text());
+                    const text = await res.text();
+                    const pre = document.createElement('pre');
+                    pre.textContent = text;
+                    content.innerHTML = '';
+                    content.appendChild(pre);
+                } catch (e) {
+                    content.innerHTML = `<div class="empty-hint" style="color: var(--red)">Error loading text: ${e.message}</div>`;
+                }
+            }
+        }
+
+        function closePreviewModal() {
+            document.getElementById('filePreviewModal').classList.remove('active');
+        }
+
+        function downloadFromModal() {
+            downloadSelectedFile();
+        }
+
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        async function downloadSelectedFile() {
+            if (!selectedFilePath || !isFileSelected || !selectedAgent) return;
+            window.open(`/api/files/download?agent_id=${selectedAgent}&path=${encodeURIComponent(selectedFilePath)}`, '_blank');
+        }
+
+        async function uploadFileAtSelected(input) {
+            const file = input.files[0];
+            if (!file) return;
+
+            let uploadPath = selectedFilePath || "";
+            if (isFileSelected) {
+                uploadPath = uploadPath.substring(0, uploadPath.lastIndexOf('/'));
+            }
+            uploadPath = uploadPath ? (uploadPath.endsWith('/') ? `${uploadPath}${file.name}` : `${uploadPath}/${file.name}`) : file.name;
+
+            const reader = new FileReader();
+            reader.onload = async () => {
+                try {
+                    const res = await fetch(`/api/files/upload?agent_id=${selectedAgent}&path=${encodeURIComponent(uploadPath)}`, {
+                        method: 'POST',
+                        body: reader.result
+                    });
+                    if (res.ok) {
+                        log(`Uploaded ${file.name} to ${uploadPath}`, 'ok');
+                        fetchFiles();
+                    } else {
+                        const err = await res.text();
+                        log(`Upload failed: ${err}`, 'error');
+                    }
+                } catch (e) {
+                    log(`Upload error: ${e.message}`, 'error');
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
     </script>
+    <div id="filePreviewModal" class="modal-overlay" onclick="if(event.target === this) closePreviewModal()">
+        <div class="modal-card">
+            <div class="modal-header">
+                <div class="modal-title" id="modalTitle">File Preview</div>
+                <button class="tool-btn" onclick="closePreviewModal()" style="border: none; background: transparent;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-content" id="modalContent">
+                <div class="empty-hint">Loading...</div>
+            </div>
+            <div class="modal-footer">
+                <button class="tool-btn" onclick="downloadFromModal()">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v4"></path>
+                        <polyline points="7 10 12 15 17 10"></polyline>
+                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    Download
+                </button>
+                <button class="tool-btn" onclick="document.getElementById('fileInput').click()">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="16 16 12 12 8 16"></polyline>
+                        <line x1="12" y1="12" x2="12" y2="21"></line>
+                        <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"></path>
+                    </svg>
+                    Upload
+                </button>
+                <button class="tool-btn primary" onclick="closePreviewModal()">Close</button>
+            </div>
+        </div>
+    </div>
 </body>
 
 </html>
